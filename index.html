@@ -7,14 +7,51 @@
     <link rel="shortcut icon" type="image/x-icon" href="favicon.png">
     <link rel="stylesheet" href="styles.css">
     <!-- Google tag (gtag.js) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-NRB4K32M3X"></script>
-<script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-NRB4K32M3X"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', 'G-NRB4K32M3X');
+    </script>
+    <style>
+        /* Jerome integration styles */
+        #jeromeStatus {
+            font-size: 0.85em;
+            color: #a07030;
+            margin-top: 8px;
+            min-height: 1.2em;
+            transition: opacity 0.3s;
+        }
+        #jeromeStatus.error { color: #c44; }
+        #jeromeStatus.success { color: #4a4; }
+        #jeromeStatus .spinner {
+            display: inline-block;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
 
-  gtag('config', 'G-NRB4K32M3X');
-</script>
+        /* Audio player styling */
+        #jeromeAudio {
+            display: none;
+            margin: 12px auto;
+            max-width: 300px;
+        }
+        #jeromeAudio.visible {
+            display: block;
+        }
+
+        /* Voice toggle */
+        #voiceToggle {
+            font-size: 0.75em;
+            color: #888;
+            cursor: pointer;
+            margin-top: 4px;
+            text-decoration: underline;
+            text-decoration-style: dotted;
+        }
+        #voiceToggle:hover { color: #653600; }
+    </style>
 </head>
 <body>
     <header>
@@ -22,34 +59,169 @@
     </header>
     <main>
         <h2>Bub the Escape Artist.</h2>
-        <!-- Removed the line/link as requested -->
         <p id="sentenceFeedback">Press Bub & get an excuse to escape any convo.</p>
-        <p id="generatedSentence"></p> <!-- Element to display the generated sentence -->
+        <p id="generatedSentence"></p>
+
+        <!-- Jerome audio player -->
+        <audio id="jeromeAudio" controls></audio>
+
+        <!-- Jerome status indicator -->
+        <p id="jeromeStatus"></p>
+
+        <!-- Voice mode toggle -->
+        <p id="voiceToggle" title="Toggle between Jerome voice and browser voice">🎙️ voice: Jerome</p>
+
         <!-- Email form, initially hidden -->
         <form id="excuseForm" style="display:none;">
             <input type="email" id="emailAddress" name="user_email" placeholder="Your email address" required>
             <input type="hidden" id="excuse" name="excuse_message">
             <input type="submit" value="Send me this excuse">
         </form>
-        <!-- Additional line of text, initially hidden -->
         <p id="scriptText" style="display:none;"></p>
         <a id="bubLink" href="#" style="cursor: pointer;">
             <img src="newbub.png" alt="Bub the Prophet">
         </a>
-        <!-- Removed the nav section as requested -->
     </main>
+
     <script src="https://cdn.emailjs.com/sdk/2.3.2/email.min.js"></script>
     <script type="text/javascript">
         (function() {
-            emailjs.init("jZCrMG8JEvzJ1JB1l"); // Replace with your actual EmailJS user ID
+            emailjs.init("jZCrMG8JEvzJ1JB1l");
         })();
     </script>
+
+    <!-- Jerome Zone Gradio Client (loaded as module, exposes globals) -->
+    <script type="module">
+        // ─── Jerome Zone Integration ───────────────────────────────
+        // Connects to the GPT-SoVITS voice cloning space on HuggingFace
+
+        const JEROME_SPACE = "khobster/the_jerome_zone";
+        const DEFAULT_PROMPT_TEXT = "I was shocked to hear that the center from Houston";
+
+        let jeromeClient = null;
+        let connecting = false;
+
+        async function loadGradioClient() {
+            // Dynamic import from CDN
+            const mod = await import("https://cdn.jsdelivr.net/npm/@gradio/client/dist/index.min.js");
+            return mod.Client || mod.client || mod.default;
+        }
+
+        async function connectToJerome() {
+            if (jeromeClient) return jeromeClient;
+            if (connecting) {
+                // Wait for existing connection attempt
+                while (connecting) await new Promise(r => setTimeout(r, 200));
+                return jeromeClient;
+            }
+            connecting = true;
+            try {
+                const ClientClass = await loadGradioClient();
+                jeromeClient = await ClientClass.connect(JEROME_SPACE);
+                console.log("✅ Connected to Jerome Zone");
+                return jeromeClient;
+            } catch (e) {
+                console.warn("⚠️ Could not connect to Jerome Zone:", e);
+                return null;
+            } finally {
+                connecting = false;
+            }
+        }
+
+        // Pre-connect on page load (wakes the space if sleeping)
+        connectToJerome().then(client => {
+            if (client) {
+                console.log("Jerome Zone pre-connected and ready");
+            }
+        });
+
+        /**
+         * Call Jerome Zone to generate audio from text.
+         * Returns an audio blob URL, or null on failure.
+         *
+         * The generate_btn.click in app.py takes these inputs:
+         *   [text_input, prompt_text_input, use_phonetic_hack,
+         *    speed_slider, top_k_slider, top_p_slider, temperature_slider]
+         *
+         * fn_index 0 = healthcheck refresh button
+         * fn_index 1 = generate button
+         */
+        window.generateJeromeAudio = async function(text) {
+            try {
+                const client = await connectToJerome();
+                if (!client) throw new Error("No connection to Jerome Zone");
+
+                console.log("🎤 Sending to Jerome:", text);
+
+                // Try fn_index 1 (generate button) with all 7 inputs
+                const result = await client.predict(1, [
+                    text,                   // text_input
+                    DEFAULT_PROMPT_TEXT,     // prompt_text_input
+                    false,                  // use_phonetic_hack
+                    1.0,                    // speed
+                    15,                     // top_k
+                    1.0,                    // top_p
+                    1.0,                    // temperature
+                ]);
+
+                console.log("Jerome result:", result);
+
+                // Gradio returns audio as { url: "...", ... } or as a file path
+                const audioData = result.data[0];
+
+                if (!audioData) throw new Error("No audio returned");
+
+                // Handle different return formats
+                if (typeof audioData === 'string') {
+                    // Direct URL
+                    return audioData;
+                } else if (audioData.url) {
+                    // Object with url property
+                    return audioData.url;
+                } else if (audioData.path) {
+                    // Object with path — construct full URL
+                    const base = `https://khobster-the-jerome-zone.hf.space/file=`;
+                    return base + audioData.path;
+                } else {
+                    throw new Error("Unexpected audio format: " + JSON.stringify(audioData));
+                }
+
+            } catch (e) {
+                console.error("Jerome generation failed:", e);
+
+                // If fn_index 1 didn't work, try without fn_index (let client discover)
+                try {
+                    const client = await connectToJerome();
+                    if (!client) throw e;
+
+                    // Try calling by discovering available endpoints
+                    const result = await client.predict("/synthesize_ui", [
+                        text, DEFAULT_PROMPT_TEXT, false, 1.0, 15, 1.0, 1.0,
+                    ]);
+
+                    const audioData = result.data[0];
+                    if (audioData && audioData.url) return audioData.url;
+                    if (typeof audioData === 'string') return audioData;
+                } catch (e2) {
+                    console.error("Jerome fallback attempt also failed:", e2);
+                }
+
+                return null;
+            }
+        };
+
+        window.jeromeModuleLoaded = true;
+    </script>
+
     <script>
+        // ─── Configuration ─────────────────────────────────────────
+        let useJeromeVoice = true; // default to Jerome
+
+        // ─── Helper Functions ──────────────────────────────────────
         async function fetchRandomName() {
             const response = await fetch('https://randomuser.me/api/?nat=us,gb,ca,au,nz');
             const data = await response.json();
-            const name = `${data.results[0].name.first} ${data.results[0].name.last}`;
-            return name;
+            return `${data.results[0].name.first} ${data.results[0].name.last}`;
         }
 
         function fetchRandomRestaurant() {
@@ -131,43 +303,112 @@
         }
 
         function generateRandomMinutes() {
-            return Math.floor(Math.random() * 45) + 15; // Generates a number between 15 and 59
+            return Math.floor(Math.random() * 45) + 15;
         }
 
         async function generateSentence() {
             const randomName = await fetchRandomName();
             const randomRestaurant = fetchRandomRestaurant();
             const randomMinutes = generateRandomMinutes();
-
             return `You'll have to excuse me I have a meeting with ${randomName} at ${randomRestaurant} in ${randomMinutes} minutes.`;
         }
 
-        function speakSentence(sentence) {
-            const formattedSentence = sentence;
-            const utterance = new SpeechSynthesisUtterance(formattedSentence);
-            utterance.voice = speechSynthesis.getVoices().find(voice => voice.lang.startsWith('en') && voice.name.includes('Male'));
-            window.speechSynthesis.speak(utterance);
-            document.getElementById('generatedSentence').textContent = formattedSentence;
-
-            // Show the form and additional message as the excuse is generated
-            document.getElementById('excuseForm').style.display = 'block';
-            document.getElementById('scriptText').style.display = 'block';
-            document.getElementById('excuse').value = formattedSentence; // Update the hidden field with the excuse
+        // ─── Status Helpers ────────────────────────────────────────
+        function setStatus(msg, className) {
+            const el = document.getElementById('jeromeStatus');
+            el.textContent = msg;
+            el.className = className || '';
         }
 
+        function setStatusHTML(html, className) {
+            const el = document.getElementById('jeromeStatus');
+            el.innerHTML = html;
+            el.className = className || '';
+        }
+
+        // ─── Browser Voice Fallback ────────────────────────────────
+        function speakWithBrowserVoice(sentence) {
+            const utterance = new SpeechSynthesisUtterance(sentence);
+            utterance.voice = speechSynthesis.getVoices().find(
+                voice => voice.lang.startsWith('en') && voice.name.includes('Male')
+            );
+            window.speechSynthesis.speak(utterance);
+            setStatus('(browser voice — Jerome unavailable)', 'error');
+        }
+
+        // ─── Jerome Voice ──────────────────────────────────────────
+        async function speakWithJerome(sentence) {
+            setStatusHTML('<span class="spinner">📞</span> Jerome is cookin\' up your excuse... hang tight', '');
+
+            const audioEl = document.getElementById('jeromeAudio');
+            audioEl.classList.remove('visible');
+
+            // Wait for the module to load (in case click happens before module is ready)
+            let waited = 0;
+            while (!window.jeromeModuleLoaded && waited < 3000) {
+                await new Promise(r => setTimeout(r, 100));
+                waited += 100;
+            }
+
+            if (!window.generateJeromeAudio) {
+                console.warn("Jerome module not loaded, falling back to browser voice");
+                speakWithBrowserVoice(sentence);
+                return;
+            }
+
+            try {
+                const audioUrl = await window.generateJeromeAudio(sentence);
+                if (!audioUrl) throw new Error("No audio URL returned");
+
+                audioEl.src = audioUrl;
+                audioEl.classList.add('visible');
+                audioEl.play();
+
+                setStatus('🎙️ Jerome has spoken.', 'success');
+            } catch (e) {
+                console.error("Jerome failed, falling back to browser voice:", e);
+                speakWithBrowserVoice(sentence);
+            }
+        }
+
+        // ─── Main Click Handler ────────────────────────────────────
         document.getElementById('bubLink').addEventListener('click', async function(event) {
             event.preventDefault();
 
-            // Try to "wake up" speech synthesis
+            // Wake up speech synthesis (for fallback)
             var emptyUtterance = new SpeechSynthesisUtterance('');
             window.speechSynthesis.speak(emptyUtterance);
-            window.speechSynthesis.cancel(); // Immediately cancel to not actually speak the empty utterance
+            window.speechSynthesis.cancel();
 
             document.getElementById('sentenceFeedback').textContent = 'Generating excuse...';
             const sentence = await generateSentence();
-            speakSentence(sentence);
+
+            // Show the text immediately
+            document.getElementById('generatedSentence').textContent = sentence;
+            document.getElementById('excuseForm').style.display = 'block';
+            document.getElementById('scriptText').style.display = 'block';
+            document.getElementById('excuse').value = sentence;
+
+            // Speak it
+            if (useJeromeVoice) {
+                await speakWithJerome(sentence);
+            } else {
+                speakWithBrowserVoice(sentence);
+                setStatus('(browser voice)', '');
+            }
+
+            document.getElementById('sentenceFeedback').textContent = 'Press Bub for another excuse.';
         });
 
+        // ─── Voice Toggle ──────────────────────────────────────────
+        document.getElementById('voiceToggle').addEventListener('click', function() {
+            useJeromeVoice = !useJeromeVoice;
+            this.textContent = useJeromeVoice
+                ? '🎙️ voice: Jerome'
+                : '🔊 voice: browser';
+        });
+
+        // ─── Email Form ────────────────────────────────────────────
         document.getElementById('excuseForm').addEventListener('submit', function(event) {
             event.preventDefault();
             emailjs.sendForm('service_rys7roe', 'template_7iuqbut', this)
