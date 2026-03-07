@@ -157,11 +157,11 @@
                 const result = await client.predict(1, [
                     text,                   // text_input
                     DEFAULT_PROMPT_TEXT,     // prompt_text_input
-                    false,                  // use_phonetic_hack
-                    1.0,                    // speed
-                    15,                     // top_k
-                    1.0,                    // top_p
-                    1.0,                    // temperature
+                    true,                   // use_phonetic_hack
+                    0.96,                   // speed
+                    1,                      // top_k (minimum is 1)
+                    0.1,                    // top_p (minimum from slider)
+                    0.1,                    // temperature
                 ]);
 
                 console.log("Jerome result:", result);
@@ -196,7 +196,7 @@
 
                     // Try calling by discovering available endpoints
                     const result = await client.predict("/synthesize_ui", [
-                        text, DEFAULT_PROMPT_TEXT, false, 1.0, 15, 1.0, 1.0,
+                        text, DEFAULT_PROMPT_TEXT, true, 0.96, 1, 0.1, 0.1,
                     ]);
 
                     const audioData = result.data[0];
