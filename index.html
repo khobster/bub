@@ -69,7 +69,7 @@
         <p id="jeromeStatus"></p>
 
         <!-- Voice mode toggle -->
-        <p id="voiceToggle" title="Toggle between Jerome voice and browser voice">🎙️ voice: Jerome</p>
+        <p id="voiceToggle" title="Click to cycle voice modes">🎙️ voice: Jerome</p>
 
         <!-- Email form, initially hidden -->
         <form id="excuseForm" style="display:none;">
@@ -90,122 +90,178 @@
         })();
     </script>
 
-    <!-- Jerome Zone Gradio Client (loaded as module, exposes globals) -->
+    <!-- Gradio Client (loaded as module, exposes globals for Jerome + Kokoro) -->
     <script type="module">
-        // ─── Jerome Zone Integration ───────────────────────────────
-        // Connects to the GPT-SoVITS voice cloning space on HuggingFace
+        // ─── Shared Gradio Client Loader ──────────────────────────────
+        let ClientClass = null;
+        async function loadGradioClient() {
+            if (ClientClass) return ClientClass;
+            const mod = await import("https://cdn.jsdelivr.net/npm/@gradio/client/dist/index.min.js");
+            ClientClass = mod.Client || mod.client || mod.default;
+            return ClientClass;
+        }
 
+        // Helper: extract audio URL from Gradio result
+        function extractAudioUrl(audioData, spaceBaseUrl) {
+            if (!audioData) return null;
+            if (typeof audioData === 'string') return audioData;
+            if (audioData.url) return audioData.url;
+            if (audioData.path) return spaceBaseUrl + '/file=' + audioData.path;
+            return null;
+        }
+
+        // ─── Jerome Zone Integration ──────────────────────────────────
         const JEROME_SPACE = "khobster/the_jerome_zone";
         const DEFAULT_PROMPT_TEXT = "I was shocked to hear that the center from Houston";
-
         let jeromeClient = null;
-        let connecting = false;
-
-        async function loadGradioClient() {
-            // Dynamic import from CDN
-            const mod = await import("https://cdn.jsdelivr.net/npm/@gradio/client/dist/index.min.js");
-            return mod.Client || mod.client || mod.default;
-        }
+        let jeromeConnecting = false;
 
         async function connectToJerome() {
             if (jeromeClient) return jeromeClient;
-            if (connecting) {
-                // Wait for existing connection attempt
-                while (connecting) await new Promise(r => setTimeout(r, 200));
+            if (jeromeConnecting) {
+                while (jeromeConnecting) await new Promise(r => setTimeout(r, 200));
                 return jeromeClient;
             }
-            connecting = true;
+            jeromeConnecting = true;
             try {
-                const ClientClass = await loadGradioClient();
-                jeromeClient = await ClientClass.connect(JEROME_SPACE);
+                const C = await loadGradioClient();
+                jeromeClient = await C.connect(JEROME_SPACE);
                 console.log("✅ Connected to Jerome Zone");
                 return jeromeClient;
             } catch (e) {
                 console.warn("⚠️ Could not connect to Jerome Zone:", e);
                 return null;
             } finally {
-                connecting = false;
+                jeromeConnecting = false;
             }
         }
 
-        // Pre-connect on page load (wakes the space if sleeping)
-        connectToJerome().then(client => {
-            if (client) {
-                console.log("Jerome Zone pre-connected and ready");
-            }
-        });
+        // Pre-connect Jerome on page load
+        connectToJerome().then(c => { if (c) console.log("Jerome pre-connected"); });
 
-        /**
-         * Call Jerome Zone to generate audio from text.
-         * Returns an audio blob URL, or null on failure.
-         *
-         * The generate_btn.click in app.py takes these inputs:
-         *   [text_input, prompt_text_input, use_phonetic_hack,
-         *    speed_slider, top_k_slider, top_p_slider, temperature_slider]
-         *
-         * fn_index 0 = healthcheck refresh button
-         * fn_index 1 = generate button
-         */
         window.generateJeromeAudio = async function(text) {
             try {
                 const client = await connectToJerome();
                 if (!client) throw new Error("No connection to Jerome Zone");
-
                 console.log("🎤 Sending to Jerome:", text);
 
-                // Try fn_index 1 (generate button) with all 7 inputs
                 const result = await client.predict(1, [
-                    text,                   // text_input
-                    DEFAULT_PROMPT_TEXT,     // prompt_text_input
-                    true,                   // use_phonetic_hack
-                    0.96,                   // speed
-                    1,                      // top_k (minimum is 1)
-                    0.1,                    // top_p (minimum from slider)
-                    0.1,                    // temperature
+                    text, DEFAULT_PROMPT_TEXT, true, 0.96, 1, 0.1, 0.1,
                 ]);
-
                 console.log("Jerome result:", result);
-
-                // Gradio returns audio as { url: "...", ... } or as a file path
-                const audioData = result.data[0];
-
-                if (!audioData) throw new Error("No audio returned");
-
-                // Handle different return formats
-                if (typeof audioData === 'string') {
-                    // Direct URL
-                    return audioData;
-                } else if (audioData.url) {
-                    // Object with url property
-                    return audioData.url;
-                } else if (audioData.path) {
-                    // Object with path — construct full URL
-                    const base = `https://khobster-the-jerome-zone.hf.space/file=`;
-                    return base + audioData.path;
-                } else {
-                    throw new Error("Unexpected audio format: " + JSON.stringify(audioData));
-                }
-
+                const url = extractAudioUrl(result.data[0], "https://khobster-the-jerome-zone.hf.space");
+                if (!url) throw new Error("No audio URL from Jerome");
+                return url;
             } catch (e) {
-                console.error("Jerome generation failed:", e);
-
-                // If fn_index 1 didn't work, try without fn_index (let client discover)
+                console.error("Jerome primary call failed:", e);
                 try {
                     const client = await connectToJerome();
                     if (!client) throw e;
-
-                    // Try calling by discovering available endpoints
                     const result = await client.predict("/synthesize_ui", [
                         text, DEFAULT_PROMPT_TEXT, true, 0.96, 1, 0.1, 0.1,
                     ]);
-
-                    const audioData = result.data[0];
-                    if (audioData && audioData.url) return audioData.url;
-                    if (typeof audioData === 'string') return audioData;
+                    const url = extractAudioUrl(result.data[0], "https://khobster-the-jerome-zone.hf.space");
+                    if (url) return url;
                 } catch (e2) {
-                    console.error("Jerome fallback attempt also failed:", e2);
+                    console.error("Jerome fallback also failed:", e2);
+                }
+                return null;
+            }
+        };
+
+        // ─── Kokoro TTS Integration ───────────────────────────────────
+        // Uses a duplicate of hexgrad/Kokoro-TTS (official space has API disabled)
+        // predict_btn.click → fn predict(text, voice, speed) → audio
+        // fn_index in duplicates:
+        //   0=random_quote, 1=gatsby, 2=frankenstein,
+        //   3=generate_first, 4=tokenize_first, 5=generate_all,
+        //   6=stop, 7=predict
+        const KOKORO_SPACES = [
+            "rishi2025/Kokoro-TTS",
+            "NeuralFalcon/Kokoro-TTS",
+        ];
+        const KOKORO_VOICE = "am_adam";  // American male, clean & natural
+        const KOKORO_SPEED = 1.0;
+
+        let kokoroClient = null;
+        let kokoroConnecting = false;
+        let kokoroSpaceIndex = 0;
+
+        async function connectToKokoro() {
+            if (kokoroClient) return kokoroClient;
+            if (kokoroConnecting) {
+                while (kokoroConnecting) await new Promise(r => setTimeout(r, 200));
+                return kokoroClient;
+            }
+            kokoroConnecting = true;
+            try {
+                const C = await loadGradioClient();
+                // Try spaces in order until one connects
+                for (let i = 0; i < KOKORO_SPACES.length; i++) {
+                    try {
+                        const space = KOKORO_SPACES[(kokoroSpaceIndex + i) % KOKORO_SPACES.length];
+                        console.log("🔌 Trying Kokoro space:", space);
+                        kokoroClient = await C.connect(space);
+                        kokoroSpaceIndex = (kokoroSpaceIndex + i) % KOKORO_SPACES.length;
+                        console.log("✅ Connected to Kokoro TTS:", space);
+                        return kokoroClient;
+                    } catch (e) {
+                        console.warn("⚠️ Kokoro space failed:", KOKORO_SPACES[(kokoroSpaceIndex + i) % KOKORO_SPACES.length], e.message);
+                    }
+                }
+                return null;
+            } finally {
+                kokoroConnecting = false;
+            }
+        }
+
+        // Pre-connect Kokoro (lower priority than Jerome)
+        setTimeout(() => {
+            connectToKokoro().then(c => { if (c) console.log("Kokoro pre-connected"); });
+        }, 2000);
+
+        window.generateKokoroAudio = async function(text) {
+            try {
+                const client = await connectToKokoro();
+                if (!client) throw new Error("No connection to Kokoro TTS");
+                console.log("🗣️ Sending to Kokoro:", text);
+
+                // Try predict endpoint (fn_index 7) — simplest, CPU-only, returns just audio
+                let result;
+                try {
+                    result = await client.predict(7, [text, KOKORO_VOICE, KOKORO_SPEED]);
+                } catch (e1) {
+                    console.warn("Kokoro fn_index 7 failed, trying /predict:", e1.message);
+                    result = await client.predict("/predict", [text, KOKORO_VOICE, KOKORO_SPEED]);
                 }
 
+                console.log("Kokoro result:", result);
+                const audioData = result.data[0];
+                const spaceName = KOKORO_SPACES[kokoroSpaceIndex].replace('/', '-');
+                const baseUrl = `https://${spaceName}.hf.space`;
+                const url = extractAudioUrl(audioData, baseUrl);
+                if (!url) throw new Error("No audio URL from Kokoro");
+                return url;
+            } catch (e) {
+                console.error("Kokoro generation failed:", e);
+
+                // Try generate_first as fallback (fn_index 3)
+                try {
+                    const client = await connectToKokoro();
+                    if (!client) throw e;
+                    // generate_first(text, voice, speed, use_gpu)
+                    const result = await client.predict(3, [text, KOKORO_VOICE, KOKORO_SPEED, false]);
+                    const audioData = result.data[0];
+                    const spaceName = KOKORO_SPACES[kokoroSpaceIndex].replace('/', '-');
+                    const baseUrl = `https://${spaceName}.hf.space`;
+                    const url = extractAudioUrl(audioData, baseUrl);
+                    if (url) return url;
+                } catch (e2) {
+                    console.error("Kokoro generate_first fallback also failed:", e2);
+                }
+
+                // Reset client so next attempt retries connection
+                kokoroClient = null;
                 return null;
             }
         };
@@ -214,8 +270,68 @@
     </script>
 
     <script>
-        // ─── Configuration ─────────────────────────────────────────
-        let useJeromeVoice = true; // default to Jerome
+        // ─── Voice Modes ───────────────────────────────────────────
+        // 'jerome' = Jerome Zone GPT-SoVITS
+        // 'narrator' = Best available browser neural voice
+        // 'off' = No audio, text only
+        const VOICE_MODES = ['jerome', 'narrator', 'off'];
+        const VOICE_LABELS = {
+            jerome:   '🎙️ voice: Jerome',
+            narrator: '🗣️ voice: narrator',
+            off:      '🔇 voice: off'
+        };
+        let voiceMode = 'jerome';
+
+        // ─── Smart Browser Voice Selection ─────────────────────────
+        // Prioritizes the best neural/natural voices available across browsers
+        let bestBrowserVoice = null;
+
+        function findBestVoice() {
+            const voices = speechSynthesis.getVoices();
+            if (!voices.length) return null;
+
+            // Priority tiers — first match wins
+            const priorities = [
+                // Microsoft Edge neural voices (Windows/Edge) — these are excellent
+                v => /Microsoft.*Guy.*Online.*Natural/i.test(v.name),
+                v => /Microsoft.*Andrew.*Online.*Natural/i.test(v.name),
+                v => /Microsoft.*Christopher.*Online.*Natural/i.test(v.name),
+                v => /Microsoft.*Eric.*Online.*Natural/i.test(v.name),
+                v => /Microsoft.*Roger.*Online.*Natural/i.test(v.name),
+                // Any Microsoft "Natural" English voice
+                v => /Microsoft.*Natural/i.test(v.name) && v.lang.startsWith('en'),
+                // Google neural voices (Chrome desktop)
+                v => v.name === 'Google US English',
+                v => v.name === 'Google UK English Male',
+                // macOS / iOS quality voices
+                v => /^Daniel/i.test(v.name) && v.lang.startsWith('en'),
+                v => /^Aaron/i.test(v.name) && v.lang.startsWith('en'),
+                v => /^Tom/i.test(v.name) && v.lang.startsWith('en'),
+                // Any English voice with "premium" or "enhanced" in name
+                v => /premium|enhanced|neural|natural/i.test(v.name) && v.lang.startsWith('en'),
+                // Any English male voice as last resort
+                v => v.lang.startsWith('en') && /male|guy|man|david|james|mark/i.test(v.name),
+                // Any English voice at all
+                v => v.lang.startsWith('en-US'),
+                v => v.lang.startsWith('en'),
+            ];
+
+            for (const test of priorities) {
+                const found = voices.find(test);
+                if (found) return found;
+            }
+            return voices[0]; // absolute fallback
+        }
+
+        // Voices load async in some browsers
+        function initVoices() {
+            bestBrowserVoice = findBestVoice();
+            if (bestBrowserVoice) {
+                console.log('🗣️ Best browser voice:', bestBrowserVoice.name, bestBrowserVoice.lang);
+            }
+        }
+        speechSynthesis.onvoiceschanged = initVoices;
+        initVoices(); // try immediately too
 
         // ─── Helper Functions ──────────────────────────────────────
         async function fetchRandomName() {
@@ -326,14 +442,47 @@
             el.className = className || '';
         }
 
-        // ─── Browser Voice Fallback ────────────────────────────────
-        function speakWithBrowserVoice(sentence) {
+        // ─── Narrator Voice (Kokoro TTS → browser fallback) ────────
+        async function speakWithNarrator(sentence) {
+            window.speechSynthesis.cancel();
+            const audioEl = document.getElementById('jeromeAudio');
+
+            setStatusHTML('<span class="spinner">📞</span> narrator is generating...', '');
+
+            // Wait for module to be ready
+            let waited = 0;
+            while (!window.jeromeModuleLoaded && waited < 3000) {
+                await new Promise(r => setTimeout(r, 100));
+                waited += 100;
+            }
+
+            // Try Kokoro first
+            if (window.generateKokoroAudio) {
+                try {
+                    const audioUrl = await window.generateKokoroAudio(sentence);
+                    if (audioUrl) {
+                        audioEl.src = audioUrl;
+                        audioEl.classList.add('visible');
+                        audioEl.play();
+                        setStatus('🗣️ narrator (Kokoro TTS)', 'success');
+                        return;
+                    }
+                } catch (e) {
+                    console.warn("Kokoro failed, falling back to browser voice:", e);
+                }
+            }
+
+            // Fallback to browser voice
+            audioEl.classList.remove('visible');
             const utterance = new SpeechSynthesisUtterance(sentence);
-            utterance.voice = speechSynthesis.getVoices().find(
-                voice => voice.lang.startsWith('en') && voice.name.includes('Male')
-            );
+            if (bestBrowserVoice) {
+                utterance.voice = bestBrowserVoice;
+            }
+            utterance.rate = 0.95;
+            utterance.pitch = 0.9;
             window.speechSynthesis.speak(utterance);
-            setStatus('(browser voice — Jerome unavailable)', 'error');
+            const voiceName = bestBrowserVoice ? bestBrowserVoice.name : 'default';
+            setStatus(`🗣️ narrator: ${voiceName} (browser fallback)`, '');
         }
 
         // ─── Jerome Voice ──────────────────────────────────────────
@@ -351,8 +500,9 @@
             }
 
             if (!window.generateJeromeAudio) {
-                console.warn("Jerome module not loaded, falling back to browser voice");
-                speakWithBrowserVoice(sentence);
+                console.warn("Jerome module not loaded, falling back to narrator");
+                await speakWithNarrator(sentence);
+                setStatus('(narrator — Jerome unavailable)', 'error');
                 return;
             }
 
@@ -366,8 +516,9 @@
 
                 setStatus('🎙️ Jerome has spoken.', 'success');
             } catch (e) {
-                console.error("Jerome failed, falling back to browser voice:", e);
-                speakWithBrowserVoice(sentence);
+                console.error("Jerome failed, falling back to narrator:", e);
+                await speakWithNarrator(sentence);
+                setStatus('(narrator — Jerome unavailable)', 'error');
             }
         }
 
@@ -375,7 +526,7 @@
         document.getElementById('bubLink').addEventListener('click', async function(event) {
             event.preventDefault();
 
-            // Wake up speech synthesis (for fallback)
+            // Wake up speech synthesis
             var emptyUtterance = new SpeechSynthesisUtterance('');
             window.speechSynthesis.speak(emptyUtterance);
             window.speechSynthesis.cancel();
@@ -389,23 +540,36 @@
             document.getElementById('scriptText').style.display = 'block';
             document.getElementById('excuse').value = sentence;
 
-            // Speak it
-            if (useJeromeVoice) {
+            // Hide audio player if not using Jerome
+            const audioEl = document.getElementById('jeromeAudio');
+
+            // Speak based on current mode
+            if (voiceMode === 'jerome') {
                 await speakWithJerome(sentence);
+            } else if (voiceMode === 'narrator') {
+                audioEl.classList.remove('visible');
+                await speakWithNarrator(sentence);
             } else {
-                speakWithBrowserVoice(sentence);
-                setStatus('(browser voice)', '');
+                // off
+                audioEl.classList.remove('visible');
+                setStatus('', '');
             }
 
             document.getElementById('sentenceFeedback').textContent = 'Press Bub for another excuse.';
         });
 
-        // ─── Voice Toggle ──────────────────────────────────────────
+        // ─── Voice Toggle (3-way cycle) ────────────────────────────
         document.getElementById('voiceToggle').addEventListener('click', function() {
-            useJeromeVoice = !useJeromeVoice;
-            this.textContent = useJeromeVoice
-                ? '🎙️ voice: Jerome'
-                : '🔊 voice: browser';
+            const currentIndex = VOICE_MODES.indexOf(voiceMode);
+            voiceMode = VOICE_MODES[(currentIndex + 1) % VOICE_MODES.length];
+            this.textContent = VOICE_LABELS[voiceMode];
+
+            // Stop any playing audio when switching modes
+            window.speechSynthesis.cancel();
+            const audioEl = document.getElementById('jeromeAudio');
+            audioEl.pause();
+            audioEl.classList.remove('visible');
+            setStatus('', '');
         });
 
         // ─── Email Form ────────────────────────────────────────────
