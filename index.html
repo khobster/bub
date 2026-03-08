@@ -61,7 +61,8 @@
             border: 1px solid #ccc;
             border-radius: 4px;
             padding: 4px 8px;
-            margin-top: 4px;
+            margin: 4px auto 0;
+            display: none;
             cursor: pointer;
             max-width: 260px;
         }
@@ -78,7 +79,7 @@
 
         <!-- Voice mode toggle + Kokoro picker (always accessible) -->
         <p id="voiceToggle" title="Click to cycle voice modes">🎙️ voice: Jerome</p>
-        <select id="kokoroVoicePicker" style="display:none;">
+        <select id="kokoroVoicePicker">
             <optgroup label="── American Guys ──">
                 <option value="am_adam" selected>Slappy</option>
                 <option value="am_michael">Don LaFountain</option>
@@ -637,7 +638,7 @@
             this.textContent = VOICE_LABELS[voiceMode];
 
             // Show voice picker only in narrator mode
-            voicePicker.style.display = voiceMode === 'narrator' ? 'inline-block' : 'none';
+            voicePicker.style.display = voiceMode === 'narrator' ? 'block' : 'none';
 
             // Stop any playing audio when switching modes
             window.speechSynthesis.cancel();
