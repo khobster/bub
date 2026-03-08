@@ -75,18 +75,9 @@
     <main>
         <h2>Bub the Escape Artist.</h2>
         <p id="sentenceFeedback">Press Bub & get an excuse to escape any convo.</p>
-        <p id="generatedSentence"></p>
 
-        <!-- Jerome audio player -->
-        <audio id="jeromeAudio" controls></audio>
-
-        <!-- Jerome status indicator -->
-        <p id="jeromeStatus"></p>
-
-        <!-- Voice mode toggle -->
+        <!-- Voice mode toggle + Kokoro picker (always accessible) -->
         <p id="voiceToggle" title="Click to cycle voice modes">🎙️ voice: Jerome</p>
-
-        <!-- Kokoro voice picker (visible in narrator mode) -->
         <select id="kokoroVoicePicker" style="display:none;">
             <optgroup label="── American Guys ──">
                 <option value="am_adam" selected>Slappy</option>
@@ -126,6 +117,16 @@
             </optgroup>
         </select>
 
+        <!-- Bub -->
+        <a id="bubLink" href="#" style="cursor: pointer;">
+            <img src="newbub.png" alt="Bub the Prophet">
+        </a>
+
+        <!-- Results (appear after generating) -->
+        <p id="generatedSentence"></p>
+        <audio id="jeromeAudio" controls></audio>
+        <p id="jeromeStatus"></p>
+
         <!-- Email form, initially hidden -->
         <form id="excuseForm" style="display:none;">
             <input type="email" id="emailAddress" name="user_email" placeholder="Your email address" required>
@@ -133,9 +134,6 @@
             <input type="submit" value="Send me this excuse">
         </form>
         <p id="scriptText" style="display:none;"></p>
-        <a id="bubLink" href="#" style="cursor: pointer;">
-            <img src="newbub.png" alt="Bub the Prophet">
-        </a>
     </main>
 
     <script src="https://cdn.emailjs.com/sdk/2.3.2/email.min.js"></script>
