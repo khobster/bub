@@ -51,6 +51,21 @@
             text-decoration-style: dotted;
         }
         #voiceToggle:hover { color: #653600; }
+
+        /* Kokoro voice picker */
+        #kokoroVoicePicker {
+            font-family: inherit;
+            font-size: 0.8em;
+            color: #653600;
+            background: #fff;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 4px 8px;
+            margin-top: 4px;
+            cursor: pointer;
+            max-width: 260px;
+        }
+        #kokoroVoicePicker:hover { border-color: #653600; }
     </style>
 </head>
 <body>
@@ -70,6 +85,46 @@
 
         <!-- Voice mode toggle -->
         <p id="voiceToggle" title="Click to cycle voice modes">🎙️ voice: Jerome</p>
+
+        <!-- Kokoro voice picker (visible in narrator mode) -->
+        <select id="kokoroVoicePicker" style="display:none;">
+            <optgroup label="── American Guys ──">
+                <option value="am_adam" selected>Slappy</option>
+                <option value="am_michael">Don LaFountain</option>
+                <option value="am_fenrir">Dick Paramount</option>
+                <option value="am_puck">Bucky "Gui" Xerox</option>
+                <option value="am_echo">Teddy "20 Pump" Palmer</option>
+                <option value="am_eric">George Frisbee Whore</option>
+                <option value="am_liam">Boogie "Above-Ground Pool" Williams</option>
+                <option value="am_onyx">Wim Blenders</option>
+                <option value="am_santa">Strip Mall Santa</option>
+            </optgroup>
+            <optgroup label="── American Ladies ──">
+                <option value="af_heart">Barbara Blackberry</option>
+                <option value="af_bella">Hot Yoga Instructor</option>
+                <option value="af_nicole">Christy Cummings</option>
+                <option value="af_aoede">NPR Host</option>
+                <option value="af_kore">Patricia Pringle</option>
+                <option value="af_sarah">Cookie</option>
+                <option value="af_nova">Bunny Muffin</option>
+                <option value="af_sky">Clementine Richard</option>
+                <option value="af_alloy">Susan</option>
+                <option value="af_jessica">Fifi Goop</option>
+                <option value="af_river">Heidi Ping Pong</option>
+            </optgroup>
+            <optgroup label="── British Blokes ──">
+                <option value="bm_george">James Bond's Butler</option>
+                <option value="bm_fable">Bedtime Story Uncle</option>
+                <option value="bm_lewis">Oxford Professor</option>
+                <option value="bm_daniel">BBC Weather Man</option>
+            </optgroup>
+            <optgroup label="── British Ladies ──">
+                <option value="bf_emma">BBC Correspondent</option>
+                <option value="bf_isabella">Downton Abbey Extra</option>
+                <option value="bf_alice">London Tour Guide</option>
+                <option value="bf_lily">Bake Off Judge</option>
+            </optgroup>
+        </select>
 
         <!-- Email form, initially hidden -->
         <form id="excuseForm" style="display:none;">
@@ -180,8 +235,12 @@
             "khobster/Kokoro-TTS",
             "NeuralFalcon/Kokoro-TTS",
         ];
-        const KOKORO_VOICE = "am_adam";  // American male, clean & natural
+        const KOKORO_VOICE = "am_adam";  // fallback default
         const KOKORO_SPEED = 1.0;
+
+        function getKokoroVoice() {
+            return (window.getSelectedKokoroVoice && window.getSelectedKokoroVoice()) || KOKORO_VOICE;
+        }
 
         let kokoroClient = null;
         let kokoroConnecting = false;
@@ -229,10 +288,10 @@
                 // Try predict endpoint (fn_index 7) — simplest, CPU-only, returns just audio
                 let result;
                 try {
-                    result = await client.predict(7, [text, KOKORO_VOICE, KOKORO_SPEED]);
+                    result = await client.predict(7, [text, getKokoroVoice(), KOKORO_SPEED]);
                 } catch (e1) {
                     console.warn("Kokoro fn_index 7 failed, trying /predict:", e1.message);
-                    result = await client.predict("/predict", [text, KOKORO_VOICE, KOKORO_SPEED]);
+                    result = await client.predict("/predict", [text, getKokoroVoice(), KOKORO_SPEED]);
                 }
 
                 console.log("Kokoro result:", result);
@@ -250,7 +309,7 @@
                     const client = await connectToKokoro();
                     if (!client) throw e;
                     // generate_first(text, voice, speed, use_gpu)
-                    const result = await client.predict(3, [text, KOKORO_VOICE, KOKORO_SPEED, false]);
+                    const result = await client.predict(3, [text, getKokoroVoice(), KOKORO_SPEED, false]);
                     const audioData = result.data[0];
                     const spaceName = KOKORO_SPACES[kokoroSpaceIndex].replace('/', '-');
                     const baseUrl = `https://${spaceName}.hf.space`;
@@ -464,7 +523,10 @@
                         audioEl.src = audioUrl;
                         audioEl.classList.add('visible');
                         audioEl.play();
-                        setStatus('🗣️ narrator (Kokoro TTS)', 'success');
+                        // Show the funny name from the picker
+                        const picker = document.getElementById('kokoroVoicePicker');
+                        const funnyName = picker ? picker.options[picker.selectedIndex].text : 'narrator';
+                        setStatus(`🗣️ ${funnyName}`, 'success');
                         return;
                     }
                 } catch (e) {
@@ -532,37 +594,52 @@
             window.speechSynthesis.cancel();
 
             document.getElementById('sentenceFeedback').textContent = 'Generating excuse...';
+            document.getElementById('generatedSentence').textContent = '';
+            document.getElementById('excuseForm').style.display = 'none';
+
             const sentence = await generateSentence();
 
-            // Show the text immediately
-            document.getElementById('generatedSentence').textContent = sentence;
-            document.getElementById('excuseForm').style.display = 'block';
-            document.getElementById('scriptText').style.display = 'block';
-            document.getElementById('excuse').value = sentence;
-
-            // Hide audio player if not using Jerome
+            // Hide audio player by default
             const audioEl = document.getElementById('jeromeAudio');
 
-            // Speak based on current mode
-            if (voiceMode === 'jerome') {
+            // For 'off' mode, show text immediately. For voice modes, wait for audio.
+            if (voiceMode === 'off') {
+                document.getElementById('generatedSentence').textContent = sentence;
+                document.getElementById('excuseForm').style.display = 'block';
+                document.getElementById('scriptText').style.display = 'block';
+                document.getElementById('excuse').value = sentence;
+                audioEl.classList.remove('visible');
+                setStatus('', '');
+            } else if (voiceMode === 'jerome') {
                 await speakWithJerome(sentence);
+                // Reveal text when audio is ready
+                document.getElementById('generatedSentence').textContent = sentence;
+                document.getElementById('excuseForm').style.display = 'block';
+                document.getElementById('scriptText').style.display = 'block';
+                document.getElementById('excuse').value = sentence;
             } else if (voiceMode === 'narrator') {
                 audioEl.classList.remove('visible');
                 await speakWithNarrator(sentence);
-            } else {
-                // off
-                audioEl.classList.remove('visible');
-                setStatus('', '');
+                // Reveal text when audio is ready
+                document.getElementById('generatedSentence').textContent = sentence;
+                document.getElementById('excuseForm').style.display = 'block';
+                document.getElementById('scriptText').style.display = 'block';
+                document.getElementById('excuse').value = sentence;
             }
 
             document.getElementById('sentenceFeedback').textContent = 'Press Bub for another excuse.';
         });
 
         // ─── Voice Toggle (3-way cycle) ────────────────────────────
+        const voicePicker = document.getElementById('kokoroVoicePicker');
+
         document.getElementById('voiceToggle').addEventListener('click', function() {
             const currentIndex = VOICE_MODES.indexOf(voiceMode);
             voiceMode = VOICE_MODES[(currentIndex + 1) % VOICE_MODES.length];
             this.textContent = VOICE_LABELS[voiceMode];
+
+            // Show voice picker only in narrator mode
+            voicePicker.style.display = voiceMode === 'narrator' ? 'inline-block' : 'none';
 
             // Stop any playing audio when switching modes
             window.speechSynthesis.cancel();
@@ -571,6 +648,11 @@
             audioEl.classList.remove('visible');
             setStatus('', '');
         });
+
+        // Expose selected Kokoro voice for the module script to read
+        window.getSelectedKokoroVoice = function() {
+            return voicePicker.value;
+        };
 
         // ─── Email Form ────────────────────────────────────────────
         document.getElementById('excuseForm').addEventListener('submit', function(event) {
