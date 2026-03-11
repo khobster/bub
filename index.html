@@ -210,7 +210,7 @@
         };
 
         // ─── Blob Murphy Integration ──────────────────────────────────
-        const BLOB_SPACE = "khobster/BLOB_MURPHY"; // <--- UPDATE THIS!
+        const BLOB_SPACE = "khobster/BLOB_MURPHY"; 
         const BLOB_PROMPT_TEXT = "I remember the late Bart Giamatti said to me, Bob, would you enjoy being considered?";
         let blobClient = null;
         let blobConnecting = false;
@@ -243,7 +243,6 @@
                 if (!client) throw new Error("No connection to Blob Murphy");
                 console.log("🎤 Sending to Blob:", text);
 
-                // Matches app.py inputs: [text, prompt, speed, top_k, top_p, temp]
                 const result = await client.predict("/synthesize_ui", [
                     text, BLOB_PROMPT_TEXT, 0.95, 1, 0.1, 0.1
                 ]);
@@ -401,7 +400,11 @@
             const randomName = await fetchRandomName();
             const randomRestaurant = fetchRandomRestaurant();
             const randomMinutes = generateRandomMinutes();
-            return `You'll have to excuse me I have a meeting with ${randomName} at ${randomRestaurant} in ${randomMinutes} minutes.`;
+            
+            const displaySentence = `You'll have to excuse me I have a meeting with ${randomName} at ${randomRestaurant} in ${randomMinutes} minutes.`;
+            const blobSentence = `You'll have to excuse me, I have a meeting with ${randomName}, at ${randomRestaurant}, in ${randomMinutes} minutes.`;
+            
+            return { display: displaySentence, blob: blobSentence };
         }
 
         function setStatus(msg, className) {
@@ -522,35 +525,38 @@
             document.getElementById('generatedSentence').textContent = '';
             document.getElementById('excuseForm').style.display = 'none';
 
-            const sentence = await generateSentence();
+            const generated = await generateSentence();
+            const displaySentence = generated.display;
+            const blobSentence = generated.blob;
+            
             const audioEl = document.getElementById('jeromeAudio');
 
             if (voiceMode === 'off') {
-                document.getElementById('generatedSentence').textContent = sentence;
+                document.getElementById('generatedSentence').textContent = displaySentence;
                 document.getElementById('excuseForm').style.display = 'block';
                 document.getElementById('scriptText').style.display = 'block';
-                document.getElementById('excuse').value = sentence;
+                document.getElementById('excuse').value = displaySentence;
                 audioEl.classList.remove('visible');
                 setStatus('', '');
             } else if (voiceMode === 'jerome') {
-                await speakWithJerome(sentence);
-                document.getElementById('generatedSentence').textContent = sentence;
+                await speakWithJerome(displaySentence);
+                document.getElementById('generatedSentence').textContent = displaySentence;
                 document.getElementById('excuseForm').style.display = 'block';
                 document.getElementById('scriptText').style.display = 'block';
-                document.getElementById('excuse').value = sentence;
+                document.getElementById('excuse').value = displaySentence;
             } else if (voiceMode === 'blobmurphy') {
-                await speakWithBlob(sentence);
-                document.getElementById('generatedSentence').textContent = sentence;
+                await speakWithBlob(blobSentence);
+                document.getElementById('generatedSentence').textContent = displaySentence;
                 document.getElementById('excuseForm').style.display = 'block';
                 document.getElementById('scriptText').style.display = 'block';
-                document.getElementById('excuse').value = sentence;
+                document.getElementById('excuse').value = displaySentence;
             } else if (voiceMode === 'narrator') {
                 audioEl.classList.remove('visible');
-                await speakWithNarrator(sentence);
-                document.getElementById('generatedSentence').textContent = sentence;
+                await speakWithNarrator(displaySentence);
+                document.getElementById('generatedSentence').textContent = displaySentence;
                 document.getElementById('excuseForm').style.display = 'block';
                 document.getElementById('scriptText').style.display = 'block';
-                document.getElementById('excuse').value = sentence;
+                document.getElementById('excuse').value = displaySentence;
             }
 
             document.getElementById('sentenceFeedback').textContent = 'Press Bub for another excuse.';
